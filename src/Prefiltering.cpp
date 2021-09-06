@@ -48,7 +48,6 @@ public:
 };
 void cluster_callback(sensor_msgs::PointCloud2 *msg){
     //------------------------------------- Type Convert ------------------------------------------
-    cout<<"PUB"<<endl;
     pcl::PointCloud<pcl::PointXYZI>::Ptr pCloud (new pcl::PointCloud<pcl::PointXYZI>);
     pcl::fromROSMsg(*msg,*pCloud);
     pcl::PointCloud<pcl::PointXYZI>::iterator iter;

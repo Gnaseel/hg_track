@@ -18,9 +18,9 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 ## Generate message in the 'msg' folder
-add_message_files(
-  FILES
-)
+# add_message_files(
+#   FILES
+# )
 
 generate_messages(
   DEPENDENCIES
@@ -48,6 +48,6 @@ add_executable(lidar_Prefiltering src/Prefiltering.cpp)
 add_dependencies(lidar_Prefiltering ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 target_link_libraries(lidar_Prefiltering ${catkin_LIBRARIES})
 
-add_executable(get_lanePath src/get_lanePath.cpp)
-add_dependencies(get_lanePath ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(get_lanePath ${catkin_LIBRARIES})
+# add_executable(get_lanePath src/get_lanePath.cpp)
+# add_dependencies(get_lanePath ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# target_link_libraries(get_lanePath ${catkin_LIBRARIES})

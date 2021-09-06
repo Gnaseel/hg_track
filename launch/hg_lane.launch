@@ -4,12 +4,10 @@
  <!-- <node pkg="hg_lane" type="get_lanePath" name="get_lanePath" output="screen"/> -->
  <!-- <node pkg="hg_2d" type="scan_detector" name="scan_detector" output="screen"/> -->
 
-
-
-
  <!-- <include file = "$(find hdl_graph_slam)/launch/hdl_graph_slam.launch"/> -->
  <!-- <include file = "$(find hg_track)/launch/hg_track.launch"/> -->
  <node pkg="hg_lane" type="hg_con_slam.py" name="hg_con_slam.py" output="screen"/>
+ <node pkg="hg_lane" type="hg_lane_detection.py" name="hg_lane_detection.py" output="screen"/>
  <node pkg="rviz" type="rviz" name="rviz2" args="-d $(find hg_lane)/rviz/hg_lane.rviz" output="screen"/>
 
 <!-- ROI -->
