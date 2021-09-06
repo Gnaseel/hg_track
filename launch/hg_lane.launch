@@ -1,0 +1,49 @@
+<?xml version="1.0"?>
+<launch>
+ <node pkg="hg_lane" type="lidar_Prefiltering" name="lidar_Prefiltering" output="screen"/>
+ <!-- <node pkg="hg_lane" type="get_lanePath" name="get_lanePath" output="screen"/> -->
+ <!-- <node pkg="hg_2d" type="scan_detector" name="scan_detector" output="screen"/> -->
+
+
+
+
+ <!-- <include file = "$(find hdl_graph_slam)/launch/hdl_graph_slam.launch"/> -->
+ <!-- <include file = "$(find hg_track)/launch/hg_track.launch"/> -->
+ <node pkg="hg_lane" type="hg_con_slam.py" name="hg_con_slam.py" output="screen"/>
+ <node pkg="rviz" type="rviz" name="rviz2" args="-d $(find hg_lane)/rviz/hg_lane.rviz" output="screen"/>
+
+<!-- ROI -->
+
+ <!-- <param name="minX" type="double" value="0.0"/>
+ <param name="maxX" type="double" value="17"/>
+
+ <param name="minY" type="double" value="-0.5"/>
+ <param name="maxY" type="double" value="5"/>
+
+ <param name="minZ" type="double" value="-0.9"/>
+ <param name="maxZ" type="double" value="0.0"/> -->
+ 
+ <param name="minX" type="double" value="-17"/>
+ <param name="maxX" type="double" value="17"/>
+
+ <param name="minY" type="double" value="-5"/>
+ <param name="maxY" type="double" value="5"/>
+
+ <param name="minZ" type="double" value="-0.8"/>
+ <param name="maxZ" type="double" value="0.0"/>
+
+
+ <!-- <param name="minZ" type="double" value="-0.3"/>
+ <param name="maxZ" type="double" value="0.2"/> -->
+
+<!-- Threshold -->
+ <param name="dist" type="double" value="1.5"/>
+ <param name="threshold_conn_dist" type="double" value="2"/>
+ <param name="left_angle" type="double" value="90"/>
+ <param name="right_angle" type="double" value="-90"/>
+
+
+ <!-- Car Config -->
+ <param name="max_v" type="double" value="7"/>
+
+</launch>

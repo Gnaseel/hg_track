@@ -1,0 +1,187 @@
+#include <ros/ros.h>
+
+#include <geometry_msgs/Point.h>
+#include <geometry_msgs/PoseArray.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/PointCloud.h>
+#include <visualization_msgs/Marker.h>
+#include <std_msgs/Bool.h>
+#include <sensor_msgs/point_cloud_conversion.h>
+#include <std_msgs/Bool.h>
+#include "std_msgs/Float32.h"
+#include <sensor_msgs/PointCloud2.h>
+#include <geometry_msgs/Point.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/filters/crop_box.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/conversions.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/kdtree/kdtree.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/segmentation/extract_clusters.h>
+#include <pcl_ros/point_cloud.h>
+#include "cmath"
+#include "typeinfo"
+using namespace std;
+using PointT = pcl::PointXYZI;
+
+double minX=0;
+double minY=0;
+double minZ=0;
+double maxX=0;
+double maxY=0;
+double maxZ=0;
+double dist=0;
+
+ros::Publisher filtered_pub, clustered_pub, cons_pub;
+class Obs{
+public:
+  float minx=100;
+  float maxx=-100;
+  float miny=100;
+  float maxy=-100;
+  bool selected=false;
+};
+void cluster_callback(sensor_msgs::PointCloud2 *msg){
+    //------------------------------------- Type Convert ------------------------------------------
+    cout<<"PUB"<<endl;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr pCloud (new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::fromROSMsg(*msg,*pCloud);
+    pcl::PointCloud<pcl::PointXYZI>::iterator iter;
+
+    int temp[150]={0};
+    Obs obs[150];
+    geometry_msgs::PoseArray poses;
+    poses.header.frame_id = "map";
+    geometry_msgs::PoseArray conPoses;
+    conPoses.header.frame_id = "map";
+
+    for(iter = pCloud->begin();iter!=pCloud->end();iter++){
+
+      int idx =int(iter->intensity); 
+      if (obs[idx].maxx < iter->x) obs[idx].maxx=iter->x; 
+      if (obs[idx].maxy < iter->y) obs[idx].maxy=iter->y; 
+      if (obs[idx].minx > iter->x) obs[idx].minx=iter->x; 
+      if (obs[idx].miny > iter->y) obs[idx].miny=iter->y;
+      obs[idx].selected=true;
+      if(temp[int(iter->intensity)] == 0){
+        temp[int(iter->intensity)] = 1;
+
+        geometry_msgs::Pose pose;
+        pose.position.x=iter->x;
+        pose.position.y=iter->y;
+        poses.poses.push_back(pose);
+      }
+        // if(conlist.findIdx(iter->intensity) == -1){\
+        //     Con newCon(iter->x, iter->y, 0.3, iter->intensity);
+        //     conlist.addCon(newCon);
+        // }
+    }
+    cons_pub.publish(poses);
+}
+pcl::PCLPointCloud2 cloud_cb(pcl::PCLPointCloud2ConstPtr input)
+{
+    pcl::PointCloud<PointT>::Ptr cloud_filtered(new pcl::PointCloud<PointT>);
+
+    pcl::fromPCLPointCloud2(*input,*cloud_filtered);
+
+    pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>);
+    tree->setInputCloud(cloud_filtered);
+
+    std::vector<pcl::PointIndices> cluster_indices;
+    pcl::EuclideanClusterExtraction<PointT> ECE;
+    ECE.setClusterTolerance(0.5); // m unit, please edit here
+    ECE.setMinClusterSize(2); // 몇 개부터 한 군집?
+    ECE.setMaxClusterSize(3000); // 몇 개까지 한 군집?
+    ECE.setSearchMethod(tree);
+    ECE.setInputCloud(cloud_filtered);
+    ECE.extract(cluster_indices);
+    pcl::PCLPointCloud2 output;
+    int index = 0;
+    pcl::PointCloud<PointT> TotalCloud;
+    for(std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it, index++)
+    {
+      for(std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit)
+      {
+        PointT pt = cloud_filtered->points[*pit];
+        PointT pt2;
+        pt2.x = pt.x, pt2.y = pt.y, pt2.z = pt.z;
+        pt2.intensity = (float)(index);
+        TotalCloud.push_back(pt2);
+      }
+    }
+    pcl::toPCLPointCloud2(TotalCloud, output);
+    return output;
+
+}
+//--------------------- FILTER APPLY----------------
+pcl::PCLPointCloud2 roi_filter(pcl::PCLPointCloud2ConstPtr cloudPtr)
+{
+   pcl::PCLPointCloud2 output;
+   pcl::CropBox<pcl::PCLPointCloud2> cropFilter;
+   cropFilter.setInputCloud(cloudPtr);
+   cropFilter.setMin(Eigen::Vector4f(minX, minY, minZ, 0)); // x, y, z, min (m)
+   cropFilter.setMax(Eigen::Vector4f(maxX, maxY, maxZ, 0));
+   cropFilter.filter(output);
+   return output;
+}
+
+pcl::PCLPointCloud2 voxelGrid(pcl::PCLPointCloud2ConstPtr cloudPtr)
+{
+  pcl::PCLPointCloud2 output;
+  pcl::VoxelGrid<pcl::PCLPointCloud2> VG;
+  VG.setInputCloud(cloudPtr);
+  VG.setLeafSize(0.1f, 0.1f, 0.1f);
+  VG.filter(output);
+  return output;
+}
+
+
+void applyFilter(const sensor_msgs::PointCloud2ConstPtr& msg){
+
+    sensor_msgs::PointCloud2 output;
+    pcl::PCLPointCloud2* source = new pcl::PCLPointCloud2;
+    pcl_conversions::toPCL(*msg, *source);
+    pcl::PCLPointCloud2* cloud= new pcl::PCLPointCloud2;
+    pcl::PCLPointCloud2ConstPtr cloudPtr(cloud);
+    *cloud = *source;
+    *cloud = roi_filter(cloudPtr);  //ROI 필터 적용
+    // *cloud = voxelGrid(cloudPtr);   //VoxelGrid 적용
+    pcl_conversions::fromPCL(*cloud, output); 
+    filtered_pub.publish(output);
+
+    *cloud = cloud_cb(cloudPtr); // apply clustering
+    // *cloud = segmentation(cloudPtr);
+
+    pcl_conversions::fromPCL(*cloud, output); 
+    output.header.frame_id = "velodyne";
+    clustered_pub.publish(output);
+    cluster_callback(&output);
+    // obstacle_detect(*cloud);        // 물체 
+}
+void getParameter(ros::NodeHandle nh){
+  nh.getParam("minX",minX);
+  nh.getParam("minY",minY);
+  nh.getParam("minZ",minZ);
+  nh.getParam("maxX",maxX);
+  nh.getParam("maxY",maxY);
+  nh.getParam("maxZ",maxZ);
+}
+//-------------------------------------------------------
+int main(int argc, char ** argv)
+{
+  ros::init(argc, argv, "lidar_Prefiltering");
+  ros::NodeHandle nh;
+  ros::Subscriber vlp_sub = nh.subscribe("/velodyne_points", 10, applyFilter); // raw data callback (doing preprocessing)
+  filtered_pub = nh.advertise<sensor_msgs::PointCloud2> ("/velodyne_filtered", 100); // transmit processed output
+  clustered_pub = nh.advertise<sensor_msgs::PointCloud2> ("/velodyne_clustered", 100); // transmit processed output
+  cons_pub = nh.advertise<geometry_msgs::PoseArray> ("/lane/cons", 100); // transmit processed output
+    
+  getParameter(nh);
+
+  ros::spin();
+}
