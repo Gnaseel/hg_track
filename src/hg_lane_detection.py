@@ -20,6 +20,7 @@ warpy_margin = 3
 nwindows = 20
 margin = 50
 minpix = 3
+maxpix = 600
 lane_bin_th=120
 #[x,y]
 #13
@@ -87,7 +88,8 @@ def warp_process_image(img):
 
         left_lane_inds.append(good_left_inds)
 
-        if len(good_left_inds) > minpix:
+        if len(good_left_inds) > minpix and len(good_left_inds) < maxpix:
+            print("GOOD = {}".format(len(good_left_inds)))
             leftx_current = np.int(np.mean(nz[1][good_left_inds]))
             pose = Pose()
             pose.position.x = (window+0.5)*window_height

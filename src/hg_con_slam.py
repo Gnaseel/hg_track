@@ -229,7 +229,7 @@ def getLcon2(cons, rcon):
         dist = getDist(con.x, con.y, 0,0)               # between car, lcon
         if r_dist>3.5 or r_dist < 0.5:
             continue
-        if ccw(0,0,  rcon.x,rcon.y,  con.x,con.y) < -1:
+        if ccw(0,0,  rcon.x,rcon.y,  con.x,con.y) < -0:
             continue
 
         if con.y <-1.0:
@@ -266,35 +266,28 @@ def getRcon(cons,  lane_x, lane_y):
         if lane_dist_count!=0:
             cd.dist_lane = lane_dist/lane_dist_count
 
-        # print("COORD {} / {}    laneDist = {}  {} / {}".format(cd.x, cd.y, cd.dist_lane, lane_dist, lane_dist_count))
         cd.cdpoint=0
-        # dist = getDist(lcon.x, lcon.y, cd.x, cd.y)
         if cd.x < -0.5:
             continue
-        if cd.y < -2 or cd.y > 0.5:
+        if cd.y < -2 or cd.y > -0.2:
             continue
         # if dist < 0.3 or 6.0 < dist:
         #     continue
         cd.deg = math.atan2(cd.y, cd.x)*180/math.pi
 
-        # if lcon.deg -15 < cd.deg:
-        #     continue
-        # path_deg = math.atan2(cd.y-lcon.y, cd.x-lcon.x)*180/math.pi
-        # if path_deg > 30:
-        #     continue
-
-        
-        # cd.cdpoint -= path_deg*10
-        # cd.cdpoint += path_deg*10
-
         if cd.cdpoint > max_point:
             max_point = cd.cdpoint
             r_con = cd
+
 
     min_dist = 1000
     print("LANE Num {}".format(len(lane_x)))
     if len(lane_x)>3:
         for cd in cons:
+            # if cd.dist_lane < min_dist:
+
+            if abs(cd.y) > 0.5 and math.atan2(cd.y, cd.x)*180/math.pi > 70:
+                continue
             if cd.dist_lane < min_dist:
                 if cd.dist_lane < 3 and cd.x > -0.5 and cd.dist_lane_min < 2:
                     min_dist=cd.dist_lane
@@ -304,6 +297,7 @@ def getRcon(cons,  lane_x, lane_y):
 def getVisionLane(lanes):
     lane_x=[]
     lane_y=[]
+    print("TILT ============={}".format(tilt))
     for lane in lanes:
         x = lane.position.x/95
         y = (-lane.position.y+160)/120
@@ -399,7 +393,7 @@ if __name__ == '__main__':
 
         else:
             target.x =3
-            target.y =0
+            target.y =-0.5
         
         target_deg = -math.atan2( target.y, target.x)*180/math.pi
         path_deg = math.atan2(right_con.y-left_con.y, right_con.x-left_con.x)*180/math.pi
