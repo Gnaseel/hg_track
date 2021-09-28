@@ -375,15 +375,24 @@ if __name__ == '__main__':
     speed_pub = rospy.Publisher("/control/accel", UInt16)
     brake_pub = rospy.Publisher("/control/brake", UInt8)
 
+
+    a_pub = rospy.Publisher("/1", Float32)
+    b_pub = rospy.Publisher("/2", Float32)
+
     print("ON")
-    rate = rospy.Rate(100)
+    rate = rospy.Rate(10)
     lock = threading.Lock() 
 
 
     targetCon.x = 2
     targetCon.y = 0
+
+    pre_target_deg=0
+    now = rospy.get_rostime()
     
     while not rospy.is_shutdown():
+        pre = now
+        now = rospy.get_rostime()
         now_cons = global_cons
         now_convex = global_convex
 
@@ -419,25 +428,49 @@ if __name__ == '__main__':
 
         speed=0
         brake=0
+        
         if abs(target_deg) > 10:
             speed = 6
-            if cur_speed > 70:
-                print("2222222222Cur speed {}".format(cur_speed))
-                print("2222222222Cur speed {}".format(cur_speed*2))
+            if cur_speed > 100:
+                brake = 70
+            elif cur_speed > 70:
                 brake=50
+
+        elif abs(target_deg) > 5:
+            speed = 9
+            if cur_speed > 95:
+                brake=35
+
         else:
             speed = 12
-        # os.system('clear')
-        if cur_speed < 70:
+            target_deg*=0.5
+
+
+        if cur_speed < 70 and abs(target_deg) > 10:
             target_deg*=1.5
         steer_pub.publish(target_deg)
         speed_pub.publish(speed)  
 
+        print("NOW {}".format(now))
+        print("PRE {}".format(pre))
+
+
+        t_sub = (now-pre).to_sec()
+        print("SUB {}".format(t_sub))
+        Kd = 0.035
+        D_control = Kd * (target_deg - pre_target_deg) / t_sub
+
+        d_target_deg = target_deg - D_control
+        pre_target_deg = target_deg
         print("CURR -----------------------------")
         print("Cur speed {}\n".format(cur_speed))
         print("TARG -----------------------------")
         print("Tar speed {}".format(speed))
-        print("Tar steer {}".format(target_deg))
         print("Tar brake {}\n".format(brake))
+        print("Tar steer {}".format(target_deg))
+        print("Tar D_steer {}".format(d_target_deg))
+        # os.system('clear')
+        a_pub.publish(target_deg)
+        b_pub.publish(d_target_deg)
         plt.pause(0.001)
         rate.sleep()
