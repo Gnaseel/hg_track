@@ -59,35 +59,55 @@ def getCons(cons, target, t_degree, t_dist):
             continue
         re.append(con)
     return re
-def sen(cons, start_deg, end_deg, start_dist, end_dist):
-    me = cl.Con()
-    first_con = []
-    all_con=[]
-    poses = PoseArray()
+# def sen(cons, start_deg, end_deg, start_dist, end_dist):
+
+#     me = cl.Con()
+#     first_con = []
+#     all_con=[]
+#     poses = PoseArray()
+#     pub_poses = PoseArray()
     
-    for i in range(int(start_dist), end_dist):
-        first_con = getCons (cons, me, 70, i)
+#     for i in range(int(start_dist), end_dist):
+#         first_con = getCons (cons, me, 70, i)
 
-        if (len(first_con)==1 and i > 7) or len(first_con)==2:
-            break
+#         if (len(first_con)==1 and i > 7) or len(first_con)==2:
+#             break
 
-    for f_con in first_con:
-        for s_con in cons:
-            deg = math.atan2(s_con.y-f_con.y, s_con.x-f_con.x)*180/math.pi
-            dist = getDist(s_con.x,s_con.y  ,  f_con.x, f_con.y)
+#     for f_con in first_con:
+#         for s_con in cons:
+#             deg = math.atan2(s_con.y-f_con.y, s_con.x-f_con.x)*180/math.pi
+#             dist = getDist(s_con.x,s_con.y  ,  f_con.x, f_con.y)
 
-            if deg < start_deg or end_deg < deg:
-                continue
-            if dist < start_dist or end_dist < dist:
-                continue
+#             if deg < start_deg or end_deg < deg:
+#                 continue
+#             if dist < start_dist or end_dist < dist:
+#                 continue
+#             all_con.append(s_con)
+#     # if len(first_con)==0:
+#     #     return
+#     mean_x=0
+#     mean_y=0
+#     for con in first_con:
+#         poses.poses.append(poseBycon(con))    
+#         mean_x += con.x
+#         mean_y += con.y
+#     for con in all_con:
+#         poses.poses.append(poseBycon(con))
+#         mean_x += con.x
+#         mean_y += con.y
+#     mean_x /= len(poses.poses)+0.0001
+#     mean_y /= len(poses.poses)+0.0001
 
-            all_con.append(s_con)
+#     print("SIZE {}".format(len(poses.poses)))
+#     print("{} / {}".format(mean_x, mean_y))
 
-    for con in first_con:
-        poses.poses.append(poseBycon(con))    
-    for con in all_con:
-        poses.poses.append(poseBycon(con))
-    con_pub.publish(poses)
+#     for pose in poses.poses:
+#         dist = getDist(mean_x, mean_y, pose.position.x, pose.position.y)
+#         print("{} / {}   -------- {}".format(pose.position.x, pose.position.y, dist))
+#         if  dist < 5:
+#             pub_poses.poses.append(pose)
+#     os.system('clear')
+#     con_pub.publish(pub_poses)
 
 
 def getFinalTarget(can1, can2, target):
@@ -272,32 +292,32 @@ def getFirstContact(global_cons):
 def convex_callback(msg):
     global global_convex, targetCon, new1, new2
     # print("CONVEX SIXE {} ".format(len(msg.poses)))
-    global_convex=[]
-    if len(msg.poses) <=3:
+    to_global_convex=[]
+    if len(msg.poses) <=2:
         return
     for pose in msg.poses:
         con = cl.Con()
         con.x = pose.position.x
         con.y = pose.position.y
-        global_convex.append(con)
+        to_global_convex.append(con)
     con = cl.Con()
     con.x = msg.poses[0].position.x
     con.y = msg.poses[0].position.y
-    global_convex.append(con)
+    to_global_convex.append(con)
     
-    con1, con2 = getFirstContact(global_convex)
+    con1, con2 = getFirstContact(to_global_convex)
     new1, new2 = getNearTarget(con1, con2)
     if con1.x != 0:
         targetCon.x = (con1.x+con2.x)/2
         targetCon.y = (con1.y+con2.y)/2
     targetCon = getFinalTarget(new1, new2, targetCon)
+    global_convex=to_global_convex
 
 def cons_callback(msg):
     global global_cons
     pre_con=global_cons
 
     new_cons =[]
-    update_cons=[]
 
     off_x=0
     off_y=0
@@ -318,7 +338,7 @@ def cons_callback(msg):
         new_cons.append(temp)
 
     global_cons=[]
-    global_cons=new_cons+update_cons
+    global_cons=new_cons
 
 def steer_callback(msg):
     global ground_truth_steer
@@ -369,7 +389,7 @@ if __name__ == '__main__':
 
         # max_line=None
 
-        sen(now_cons, -50, 50, 0.0, 4)
+        # sen(now_cons, -50, 50, 0.0, 4)
         # sen(now_cons, -70, 70, 0.0, 4)
         # print("CONVEX SIZE ====================== {}".format(len(global_convex)))
         plt.cla()
@@ -399,7 +419,6 @@ if __name__ == '__main__':
 
         speed=0
         brake=0
-        print("Cur speed {}".format(cur_speed))
         if abs(target_deg) > 10:
             speed = 6
             if cur_speed > 70:
@@ -408,14 +427,17 @@ if __name__ == '__main__':
                 brake=50
         else:
             speed = 12
-
-        print("Cur brake {}".format(brake))
-        os.system('clear')
+        # os.system('clear')
         if cur_speed < 70:
             target_deg*=1.5
         steer_pub.publish(target_deg)
-        # speed_pub.publish(5)  
         speed_pub.publish(speed)  
-        # brake_pub.publish(brake)  
+
+        print("CURR -----------------------------")
+        print("Cur speed {}\n".format(cur_speed))
+        print("TARG -----------------------------")
+        print("Tar speed {}".format(speed))
+        print("Tar steer {}".format(target_deg))
+        print("Tar brake {}\n".format(brake))
         plt.pause(0.001)
         rate.sleep()

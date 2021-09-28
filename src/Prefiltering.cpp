@@ -56,23 +56,34 @@ void cluster_callback(sensor_msgs::PointCloud2 *msg){
     Obs obs[150];
     geometry_msgs::PoseArray poses;
     poses.header.frame_id = "map";
+    geometry_msgs::PoseArray pub_poses;
+    poses.header.frame_id = "map";
     geometry_msgs::PoseArray conPoses;
     conPoses.header.frame_id = "map";
 
+    double mean_x=0;
+    double mean_y=0;
+
     for(iter = pCloud->begin();iter!=pCloud->end();iter++){
 
-      int idx =int(iter->intensity); 
-      if (obs[idx].maxx < iter->x) obs[idx].maxx=iter->x; 
-      if (obs[idx].maxy < iter->y) obs[idx].maxy=iter->y; 
-      if (obs[idx].minx > iter->x) obs[idx].minx=iter->x; 
-      if (obs[idx].miny > iter->y) obs[idx].miny=iter->y;
-      obs[idx].selected=true;
+      // int idx =int(iter->intensity); 
+      // if (obs[idx].maxx < iter->x) obs[idx].maxx=iter->x; 
+      // if (obs[idx].maxy < iter->y) obs[idx].maxy=iter->y; 
+      // if (obs[idx].minx > iter->x) obs[idx].minx=iter->x; 
+      // if (obs[idx].miny > iter->y) obs[idx].miny=iter->y;
+      // obs[idx].selected=true;
+
+      double dist = sqrt((iter->x)*(iter->x) + (iter->y)*(iter->y));
+      if(dist>8.0) continue;
+
       if(temp[int(iter->intensity)] == 0){
         temp[int(iter->intensity)] = 1;
 
         geometry_msgs::Pose pose;
         pose.position.x=iter->x;
         pose.position.y=iter->y;
+        mean_x += iter->x;
+        mean_y += iter->y;
         poses.poses.push_back(pose);
       }
         // if(conlist.findIdx(iter->intensity) == -1){\
@@ -80,7 +91,31 @@ void cluster_callback(sensor_msgs::PointCloud2 *msg){
         //     conlist.addCon(newCon);
         // }
     }
-    cons_pub.publish(poses);
+
+    mean_x /= poses.poses.size()+0.0001;
+    mean_y /= poses.poses.size()+0.0001;
+
+    for(int i=0; i<poses.poses.size();i++){
+      double mean_dist = sqrt((mean_x-poses.poses[i].position.x)*(mean_x-poses.poses[i].position.x) + (mean_y-poses.poses[i].position.y)*(mean_y-poses.poses[i].position.y));
+      double dist = sqrt((poses.poses[i].position.x)*(poses.poses[i].position.x) + (poses.poses[i].position.y)*(poses.poses[i].position.y));
+
+      if(mean_dist > 4 && dist > 5)continue;
+      // if(dist<0.8 && poses.poses[i].position.x < -0.5 && abs(poses.poses[i].position.y) < 0.5) continue;
+      pub_poses.poses.push_back(poses.poses[i]);
+      
+    }
+
+    // print("SIZE {}".format(len(poses.poses)))
+    // print("{} / {}".format(mean_x, mean_y))
+
+    // for pose in poses.poses:
+    //     dist = getDist(mean_x, mean_y, pose.position.x, pose.position.y)
+    //     print("{} / {}   -------- {}".format(pose.position.x, pose.position.y, dist))
+    //     if  dist < 5:
+    //         pub_poses.poses.append(pose)
+
+
+    cons_pub.publish(pub_poses);
 }
 pcl::PCLPointCloud2 cloud_cb(pcl::PCLPointCloud2ConstPtr input)
 {
@@ -93,7 +128,7 @@ pcl::PCLPointCloud2 cloud_cb(pcl::PCLPointCloud2ConstPtr input)
 
     std::vector<pcl::PointIndices> cluster_indices;
     pcl::EuclideanClusterExtraction<PointT> ECE;
-    ECE.setClusterTolerance(1.0); // m unit, please edit here
+    ECE.setClusterTolerance(0.6); // m unit, please edit here
     ECE.setMinClusterSize(1); // 몇 개부터 한 군집?
     ECE.setMaxClusterSize(3000); // 몇 개까지 한 군집?
     ECE.setSearchMethod(tree);
@@ -105,16 +140,25 @@ pcl::PCLPointCloud2 cloud_cb(pcl::PCLPointCloud2ConstPtr input)
     for(std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it, index++)
     {
       int size = it->indices.size();
-      // cout<<"SIZE = "<<size<<endl;
-      if (size > 50) continue;
+      if (size > 30) continue;
+      if (size == 1) continue;
+      PointT pt2;
+      pcl::PointCloud<PointT> clster_Cloud;
+      bool toggle = true;
       for(std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit)
       {
         PointT pt = cloud_filtered->points[*pit];
-        PointT pt2;
         pt2.x = pt.x, pt2.y = pt.y, pt2.z = pt.z;
         pt2.intensity = (float)(index);
-        TotalCloud.push_back(pt2);
+        if (pt.z > -0.1){
+          toggle=false;
+          break;
+        }
+        clster_Cloud.push_back(pt2);
       }
+      if(toggle) TotalCloud+=clster_Cloud;
+      // cout<<"SIZE = "<<size<<endl;
+      // cout<<"DIST = "<<sqrt(pt2.x*pt2.x + pt2.y*pt2.y)<<endl;
     }
     pcl::toPCLPointCloud2(TotalCloud, output);
     return output;
