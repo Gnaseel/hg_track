@@ -93,8 +93,8 @@ pcl::PCLPointCloud2 cloud_cb(pcl::PCLPointCloud2ConstPtr input)
 
     std::vector<pcl::PointIndices> cluster_indices;
     pcl::EuclideanClusterExtraction<PointT> ECE;
-    ECE.setClusterTolerance(0.5); // m unit, please edit here
-    ECE.setMinClusterSize(2); // 몇 개부터 한 군집?
+    ECE.setClusterTolerance(1.0); // m unit, please edit here
+    ECE.setMinClusterSize(1); // 몇 개부터 한 군집?
     ECE.setMaxClusterSize(3000); // 몇 개까지 한 군집?
     ECE.setSearchMethod(tree);
     ECE.setInputCloud(cloud_filtered);
@@ -104,6 +104,9 @@ pcl::PCLPointCloud2 cloud_cb(pcl::PCLPointCloud2ConstPtr input)
     pcl::PointCloud<PointT> TotalCloud;
     for(std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it, index++)
     {
+      int size = it->indices.size();
+      // cout<<"SIZE = "<<size<<endl;
+      if (size > 50) continue;
       for(std::vector<int>::const_iterator pit = it->indices.begin(); pit != it->indices.end(); ++pit)
       {
         PointT pt = cloud_filtered->points[*pit];
@@ -151,6 +154,7 @@ void applyFilter(const sensor_msgs::PointCloud2ConstPtr& msg){
     *cloud = roi_filter(cloudPtr);  //ROI 필터 적용
     // *cloud = voxelGrid(cloudPtr);   //VoxelGrid 적용
     pcl_conversions::fromPCL(*cloud, output); 
+    output.header.frame_id = "velodyne";
     filtered_pub.publish(output);
 
     *cloud = cloud_cb(cloudPtr); // apply clustering

@@ -4,13 +4,13 @@ import rospy
 from nav_msgs.msg import *
 from sensor_msgs.msg import *
 from geometry_msgs.msg import *
-from std_msgs.msg import Float32
-from std_msgs.msg import UInt16
+from std_msgs.msg import Float32, UInt16, UInt8
 import matplotlib.pyplot as plt
 import math
 import os
 import con as cl
 import threading
+import time
 
 firstRun = True
 odomX=[]
@@ -19,18 +19,281 @@ odomY=[]
 odomCon=[]
 
 global_cons = []
+global_convex = []
 lanes = []
-
+targetCon = cl.Con()
+new1 = cl.Con()
+new2 = cl.Con()
 nowX    = 0
 nowY    = 0
 nowYaw  = 0
 
 ground_truth_steer=0
+cur_speed=0
+# ----------------------------- NEWNEWNEW ------------------------------
 
+
+def norDeg(deg):
+    while deg < -180:
+        deg +=360
+    while 180 < deg:
+        deg -=360 
+    return deg
+def poseBycon(con):
+    pose = Pose()
+    pose.position.x=con.x
+    pose.position.y=con.y
+    return pose
+def getCons(cons, target, t_degree, t_dist):
+    re = []
+    for con in cons:
+        deg = math.atan2(con.y, con.x)*180/math.pi
+        dist = getDist(target.x,target.y  ,  con.x, con.y)
+        if con.x<1.5:
+            continue
+        if abs(con.y) > 3.5:
+            continue
+        if deg < -t_degree or t_degree < deg:
+            continue
+        if t_dist < dist:
+            continue
+        re.append(con)
+    return re
+def sen(cons, start_deg, end_deg, start_dist, end_dist):
+    me = cl.Con()
+    first_con = []
+    all_con=[]
+    poses = PoseArray()
+    
+    for i in range(int(start_dist), end_dist):
+        first_con = getCons (cons, me, 70, i)
+
+        if (len(first_con)==1 and i > 7) or len(first_con)==2:
+            break
+
+    for f_con in first_con:
+        for s_con in cons:
+            deg = math.atan2(s_con.y-f_con.y, s_con.x-f_con.x)*180/math.pi
+            dist = getDist(s_con.x,s_con.y  ,  f_con.x, f_con.y)
+
+            if deg < start_deg or end_deg < deg:
+                continue
+            if dist < start_dist or end_dist < dist:
+                continue
+
+            all_con.append(s_con)
+
+    for con in first_con:
+        poses.poses.append(poseBycon(con))    
+    for con in all_con:
+        poses.poses.append(poseBycon(con))
+    con_pub.publish(poses)
+
+
+def getFinalTarget(can1, can2, target):
+
+    finalTarget = cl.Con()
+    val1 = ccw(0,0  ,  can1.x,can1.y  ,  target.x,target.y)
+    val2 = ccw(0,0  ,  can2.x,can2.y  ,  target.x,target.y)
+
+    dist = getDist(can1.x, can1.y, target.x, target.y)
+
+    if dist < 1.8:
+        finalTarget = target
+        return finalTarget
+    dist1 = getDist(can1.x, can1.y, 0, 0)
+    dist2 = getDist(can2.x, can2.y, 0, 0)
+    if dist1<dist2:
+        return can1
+    else:
+        return can2
+
+def getNearTarget(con1, con2): 
+    interval = 1.6
+    dx = con2.x - con1.x
+    dy = con2.y - con1.y
+    dist = math.sqrt(dx*dx+dy*dy)
+
+    newTarget=cl.Con()
+    newTarget.x = con1.x + dx*(interval/(dist+0.001))
+    newTarget.y = con1.y + dy*(interval/(dist+0.001))
+
+    newTarget2=cl.Con()
+    newTarget2.x = con2.x - dx*(interval/(dist+0.001))
+    newTarget2.y = con2.y - dy*(interval/(dist+0.001))
+    return newTarget, newTarget2
+import copy
+
+def getFirstContact(global_cons):
+    cons = []
+    for con in global_cons:
+        cons.append(copy.copy(con))
+    min_dist = 9999
+    con1 = cl.Con()
+    con2 = cl.Con()
+    x1=0
+    y1=0
+    x2=0
+    y2=0
+    # print("CONVEX SIZE = {}".format(len(cons)))
+    for idx, con in enumerate(cons):
+        if idx == len(cons)-1:
+            break
+        if cons[idx].y * cons[idx+1].y < 0:
+            dx = cons[idx+1].x - cons[idx].x
+            dy = cons[idx+1].y - cons[idx].y
+            # firstX = abs(cons[idx].y)/dy + cons[idx].x
+            firstX = -1*dx*cons[idx].y/dy+cons[idx].x
+
+            if firstX < min_dist and (firstX > cons[idx].x or firstX > cons[idx+1].x):
+                min_dist=firstX
+                x1 = cons[idx].x
+                x2 = cons[idx+1].x
+                y1 = cons[idx].y
+                y2 = cons[idx+1].y
+                con1 = cons[idx]
+                con2 = cons[idx+1]
+
+            # print("DIST X = {0:0.2f} --- {1:0.2f} {2:0.2f} //// {3:0.2f} {4:0.2f}".format(firstX, cons[idx].x, cons[idx].y,  cons[idx+1].x, cons[idx+1].y))
+
+    if min_dist != 9999 and (con1.x+con2.x)/2 < 5.0:
+        return con1, con2
+    for con in cons:
+        con.y +=1
+    for idx, con in enumerate(cons):
+        if idx == len(cons)-1:
+            break
+        if cons[idx].y * cons[idx+1].y < 0:
+            dx = cons[idx+1].x - cons[idx].x
+            dy = cons[idx+1].y - cons[idx].y
+            # firstX = abs(cons[idx].y)/dy + cons[idx].x
+            firstX = -1*dx*cons[idx].y/dy+cons[idx].x
+
+            if firstX < min_dist and (firstX > cons[idx].x or firstX > cons[idx+1].x):
+                min_dist=firstX
+                x1 = cons[idx].x
+                x2 = cons[idx+1].x
+                y1 = cons[idx].y
+                y2 = cons[idx+1].y
+                
+                added = cl.Con()
+                added.x = cons[idx].x
+                added.y = cons[idx].y-1
+                added2 = cl.Con()
+                added2.x = cons[idx+1].x
+                added2.y = cons[idx+1].y-1
+                con1 = added
+                con2 = added2
+    
+    for con in cons:
+        con.y -=2
+    for idx, con in enumerate(cons):
+        if idx == len(cons)-1:
+            break
+        if cons[idx].y * cons[idx+1].y < 0:
+            dx = cons[idx+1].x - cons[idx].x
+            dy = cons[idx+1].y - cons[idx].y
+            # firstX = abs(cons[idx].y)/dy + cons[idx].x
+            firstX = -1*dx*cons[idx].y/dy+cons[idx].x
+
+            if firstX < min_dist and (firstX > cons[idx].x or firstX > cons[idx+1].x):
+                min_dist=firstX
+                x1 = cons[idx].x
+                x2 = cons[idx+1].x
+                y1 = cons[idx].y
+                y2 = cons[idx+1].y
+                
+                added = cl.Con()
+                added.x = cons[idx].x
+                added.y = cons[idx].y+1
+                added2 = cl.Con()
+                added2.x = cons[idx+1].x
+                added2.y = cons[idx+1].y+1
+                con1 = added
+                con2 = added2
+
+    if con1.x == 0:
+        print("ZERO!!!")
+        for con in cons:
+            con.y +=3
+        for idx, con in enumerate(cons):
+            if idx == len(cons)-1:
+                break
+            if cons[idx].y * cons[idx+1].y < 0:
+                dx = cons[idx+1].x - cons[idx].x
+                dy = cons[idx+1].y - cons[idx].y
+                # firstX = abs(cons[idx].y)/dy + cons[idx].x
+                firstX = -1*dx*cons[idx].y/dy+cons[idx].x
+                if firstX < min_dist and (firstX > cons[idx].x or firstX > cons[idx+1].x):
+                    min_dist=firstX
+                    x1 = cons[idx].x
+                    x2 = cons[idx+1].x
+                    y1 = cons[idx].y
+                    y2 = cons[idx+1].y
+                    added = cl.Con()
+                    added.x = cons[idx].x
+                    added.y = cons[idx].y-2
+                    added2 = cl.Con()
+                    added2.x = cons[idx+1].x
+                    added2.y = cons[idx+1].y-2
+                    con1 = added
+                    con2 = added2
+                    # print("{} {} // {} {}".format(con1.x, con1.y, con2.x, con2.y))
+
+        for con in cons:
+            con.y -=4
+        for idx, con in enumerate(cons):
+            if idx == len(cons)-1:
+                break
+            if cons[idx].y * cons[idx+1].y < 0:
+                dx = cons[idx+1].x - cons[idx].x
+                dy = cons[idx+1].y - cons[idx].y
+                # firstX = abs(cons[idx].y)/dy + cons[idx].x
+                firstX = -1*dx*cons[idx].y/dy+cons[idx].x
+                if firstX < min_dist and (firstX > cons[idx].x or firstX > cons[idx+1].x):
+                    min_dist=firstX
+                    x1 = cons[idx].x
+                    x2 = cons[idx+1].x
+                    y1 = cons[idx].y
+                    y2 = cons[idx+1].y
+                    added = cl.Con()
+                    added.x = cons[idx].x
+                    added.y = cons[idx].y+2
+                    added2 = cl.Con()
+                    added2.x = cons[idx+1].x
+                    added2.y = cons[idx+1].y+2
+                    con1 = added
+                    con2 = added2
+    print("{} {} // {} {}".format(con1.x, con1.y, con2.x, con2.y))
+    # print("     FIRST X = {0:0.2f} --- {1:0.2f} {2:0.2f} //// {3:0.2f} {4:0.2f}".format(min_dist, x1, y1, x2, y2))
+    # os.system('clear')
+    return con1, con2
 #-------------------------- CALLBACK -----------------------------------
+def convex_callback(msg):
+    global global_convex, targetCon, new1, new2
+    # print("CONVEX SIXE {} ".format(len(msg.poses)))
+    global_convex=[]
+    if len(msg.poses) <=3:
+        return
+    for pose in msg.poses:
+        con = cl.Con()
+        con.x = pose.position.x
+        con.y = pose.position.y
+        global_convex.append(con)
+    con = cl.Con()
+    con.x = msg.poses[0].position.x
+    con.y = msg.poses[0].position.y
+    global_convex.append(con)
+    
+    con1, con2 = getFirstContact(global_convex)
+    new1, new2 = getNearTarget(con1, con2)
+    if con1.x != 0:
+        targetCon.x = (con1.x+con2.x)/2
+        targetCon.y = (con1.y+con2.y)/2
+    targetCon = getFinalTarget(new1, new2, targetCon)
+
 def cons_callback(msg):
     global global_cons
-
     pre_con=global_cons
 
     new_cons =[]
@@ -40,378 +303,119 @@ def cons_callback(msg):
     off_y=0
     off_num=0
     new_num=0
+     
     for con in msg.poses:
         dist = math.sqrt(con.position.x*con.position.x +  con.position.y*con.position.y)
         # if con.position.x < -0.5:
         #     continue
-        if dist<1.5 and con.position.x < -0.5 and abs(con.position.y) < 0.5:
+        if dist<0.8 and con.position.x < -0.5 and abs(con.position.y) < 0.5:
             continue
-        if dist>9:
+        if dist>20:
             continue
-        near_con = getNearCons(pre_con, con, 0.6)
         temp = cl.Con()
         temp.x=con.position.x
         temp.y=con.position.y
-        if near_con.x == -99:
-            new_cons.append(temp)
-            new_num +=1
-        else:
-            off_x += con.position.x - near_con.x
-            off_y += con.position.y - near_con.y
-            new_cons.append(temp)
-            update_cons.append(temp)
-            off_num +=1
-        
+        new_cons.append(temp)
 
-    if off_num != 0:
-        off_x = off_x/off_num
-        off_y = off_y/off_num
-
-        for con in pre_con:
-            update_con = cl.Con()
-            update_con.x = con.x + off_x
-            update_con.y = con.y + off_y
-            dist = getDist(update_con.x, update_con.y, 0, 0)
-            # if 2<dist and dist < 6 :
-            if dist < 1.9  and update_con.x > 0:
-                new_cons.append(update_con)
-        off_dist = getDist(off_x, off_y, 0, 0)
-        # print("OFFX = "+str(off_x))
-        # print("OFFY = "+str(off_y))
-        # print("OFFD = "+str(off_dist))
-        # print("OFFD_RAW = "+str(math.sqrt(off_x*off_x + off_y*off_y)))
-        if off_dist > 0.5:
-        # if abs(off_x) > 0.3 or abs(off_y) > 0.3:
-            print("WHY????????????????")
-            rospy.sleep(100)
-    # print("SIZE - "+str(len(new_cons)))
-    # print(str(new_num)+" / "+str(off_num))
-
-    global_cons=new_cons
-    # os.system('clear')
-
-def lane_callback(msg):
-    global lanes
-    lanes=msg.poses
-    # print("LANE NUM {} ".format(len(lanes)))
-    # for lane in lanes:
-    #     print("     LANE NUM {} {}".format(lane.position.x, lane.position.y))
-
-   
+    global_cons=[]
+    global_cons=new_cons+update_cons
 
 def steer_callback(msg):
     global ground_truth_steer
     ground_truth_steer = msg
 
-# def imu_callback(msg):
-#     print("im")
-
-
+def speed_callback(msg):
+    global cur_speed
+    cur_speed=msg.data
+    return
 #-------------------------- COMMON -----------------------------------
-
-# rel to abs
-def rel2abs(posX, posY):
-    abs_X = posX*math.cos(nowYaw) - posY*math.sin(nowYaw) + nowX
-    abs_Y = posX*math.sin(nowYaw) + posY*math.cos(nowYaw) + nowY
-    return abs_X, abs_Y
-
-def abs2rel(posX, posY):
-    re_X = (posX-nowX)*math.cos(-nowYaw) - (posY-nowY)*math.sin(-nowYaw)
-    re_Y = (posX-nowX)*math.sin(-nowYaw) + (posY-nowY)*math.cos(-nowYaw)
-    return re_X, re_Y
-
 def getDist(posX, posY, posX2, posY2):
     return math.sqrt((posX-posX2)*(posX-posX2) + (posY-posY2)*(posY-posY2))
 
-def printConInfo(instance):
-    print("X = "+str(instance.x)+"  Y = "+str(instance.y))
-
-def abstoDist(posX, posY):
-    rel_x, rel_y = abs2rel(posX, posY)
-    return getDist(rel_x, rel_y, 0, 0)
 
 def ccw(x1, y1, x2, y2, x3, y3):
     arw = 0
     arw = (x2-x1) * (y3-y1) - (y2-y1) * (x3-x1)
     return arw
 
-#-------------------------- ALGORITHM -----------------------------------
-
-# map update
-def getNearCons(cons, pose, interval):
-    min_dist = 9999
-    re_con = cl.Con()
-    for con in cons:
-        dist = getDist(con.x, con.y, pose.position.x, pose.position.y)
-        if dist < min_dist:
-            min_dist = dist
-            re_con = con
-
-
-    if min_dist < interval:
-        return re_con
-    temp = cl.Con()
-    temp.x=-99
-    return temp
-
-def getLcon(cons, last_con):
-    min_dist = 900
-    max_point = -300
-    l_con = cl.Con()
-    for con in cons:
-        
-        #----------------------- OUT ---------------------
-        if con.y < -0.2 or 3.2 < con.y:
-            # print("[OUT] Y condition")
-            continue
-        if con.x < 0.2 or 5.0 < con.x:
-            # print("[OUT] X condition")
-            continue
-        if con.y - last_con.y > 2.0 and con.x < 3.0:
-            continue
-        #----------------------- POINT ---------------------
-        # printConInfo(con)
-        con.point=0
-        # DEGREE
-        con.deg = math.atan2(con.y, con.x)*180/math.pi
-        if con.deg < -10 and con.x<4:
-            continue
-        if con.deg < -0 and con.x<3.5:
-            continue
-        if con.deg < 10 and con.x<3:
-            continue
-        if -20.0 < con.deg and con.deg < 60:# and 2.0 < con.x:
-            # print("[POINT] deg")
-            con.point +=100
-            # print("DEG = "+str(con.deg))
-        
-        # DIST
-        distpoint = con.y*120
-        con.dist = getDist(con.x, con.y, 0, 0)
-        distpoint = distpoint - con.dist*100
-        # print("[POINT] dist = "+str(distpoint))
-        con.point += distpoint
-
-        # PART
-        # print("     CDCDCDCD")
-
-        for cd in cons:
-            dist = getDist(con.x, con.y, cd.x, cd.y)
-            if cd.x < 0.0:
-                continue
-            if dist < 0.3 or 4.0 < dist:
-                continue
-            cd.deg = math.atan2(cd.y, cd.x)*180/math.pi
-            # printConInfo(cd)
-            # print("DIST = "+str(dist))
-
-            path_deg = math.atan2(cd.y-con.y, cd.x-con.x)*180/math.pi
-            # print("PATH DEG  = "+str(path_deg))
-            # print("[POINT] PART = ")
-
-            if path_deg > 30:
-                continue
-            
-            con.point += 150
-        # print("--------------------------------------")
-        if con.point > max_point:
-            l_con = con
-            max_point = con.point
-        # print("\n")
-
-    return l_con
-
-def getLcon2(cons, rcon):
-    lcon=cl.Con()
-    min_dist = 100
-    for con in cons:
-        r_dist = getDist(con.x, con.y, rcon.x, rcon.y)  # between lr cons
-        dist = getDist(con.x, con.y, 0,0)               # between car, lcon
-        if r_dist>3.5 or r_dist < 0.5:
-            continue
-        if ccw(0,0,  rcon.x,rcon.y,  con.x,con.y) < -0:
-            continue
-
-        if con.y <-1.0:
-            continue
-        if dist < 0.5:
-            continue
-
-
-        if dist < min_dist:
-            min_dist=dist
-            lcon = con
-    if lcon.x==0 and lcon.y==0:
-        lcon.x = rcon.x
-        lcon.y = -rcon.y
-
-    return lcon
-def getRcon(cons,  lane_x, lane_y):
-    r_con = cl.Con()
-
-    max_point = -10000
-    for cd in cons:
-        lane_dist = 0
-        lane_dist_count = 0
-        for idx, lane in enumerate(lane_x):
-            if lane_x[idx]==0:
-                continue
-            else:
-                added_dist = getDist(lane_x[idx],  lane_y[idx], cd.x, cd.y)
-                if added_dist < cd.dist_lane_min:
-                    cd.dist_lane_min = added_dist
-                lane_dist += added_dist
-                lane_dist_count +=1
-
-        if lane_dist_count!=0:
-            cd.dist_lane = lane_dist/lane_dist_count
-
-        cd.cdpoint=0
-        if cd.x < -0.5:
-            continue
-        if cd.y < -2 or cd.y > -0.2:
-            continue
-        # if dist < 0.3 or 6.0 < dist:
-        #     continue
-        cd.deg = math.atan2(cd.y, cd.x)*180/math.pi
-
-        if cd.cdpoint > max_point:
-            max_point = cd.cdpoint
-            r_con = cd
-
-
-    min_dist = 1000
-    print("LANE Num {}".format(len(lane_x)))
-    if len(lane_x)>3:
-        for cd in cons:
-            # if cd.dist_lane < min_dist:
-
-            if abs(cd.y) > 0.5 and math.atan2(cd.y, cd.x)*180/math.pi > 70:
-                continue
-            if cd.dist_lane < min_dist:
-                if cd.dist_lane < 3 and cd.x > -0.5 and cd.dist_lane_min < 2:
-                    min_dist=cd.dist_lane
-                    r_con = cd
-    return r_con
-    
-def getVisionLane(lanes):
-    lane_x=[]
-    lane_y=[]
-    print("TILT ============={}".format(tilt))
-    for lane in lanes:
-        x = lane.position.x/95
-        y = (-lane.position.y+160)/120
-        nx = x*math.cos(tilt) - y*math.sin(tilt)+0.6
-        ny = x*math.sin(tilt) + y*math.cos(tilt)-0.7
-        # print("     LANE NUM {} {}".format(nx, ny))
-        lane_x.append(nx)
-        lane_y.append(ny)
-    return lane_x, lane_y
-
 if __name__ == '__main__':
 
     rospy.init_node("pppy")
     # imu_sub = rospy.Subscriber("/imu/data", Imu, imu_callback)
+    convex_con_sub = rospy.Subscriber("/convex/cons", PoseArray, convex_callback)
     con_sub = rospy.Subscriber("/lane/cons", PoseArray, cons_callback)
     steer_sub = rospy.Subscriber("/erp42/steer_r", Float32, steer_callback)
-    steer_sub = rospy.Subscriber("/erp42/steer_r", Float32, steer_callback)
-    lane_sub = rospy.Subscriber("/hg_lane/lane_poses", PoseArray, lane_callback)
+    # steer_sub = rospy.Subscriber("/erp42/steer_r", Float32, steer_callback)
 
+    speed_sub = rospy.Subscriber("/erp42/speed_r", UInt16, speed_callback)
+
+
+    con_pub = rospy.Publisher("/hg_lane/cons", PoseArray)
     steer_pub = rospy.Publisher("/control/angle", Float32)
     speed_pub = rospy.Publisher("/control/accel", UInt16)
+    brake_pub = rospy.Publisher("/control/brake", UInt8)
+
     print("ON")
     rate = rospy.Rate(100)
     lock = threading.Lock() 
 
 
-    left_con=cl.Con()
-    right_con=cl.Con()
-
-    tilt = -42*math.pi/180
+    targetCon.x = 2
+    targetCon.y = 0
+    
     while not rospy.is_shutdown():
         now_cons = global_cons
+        now_convex = global_convex
 
+        # max_line=None
+
+        sen(now_cons, -50, 50, 0.0, 4)
+        # sen(now_cons, -70, 70, 0.0, 4)
+        # print("CONVEX SIZE ====================== {}".format(len(global_convex)))
         plt.cla()
-        plt.xlim([-3,8])
-        plt.ylim([-5,5])
-        # print("LANE NUM {} ".format(len(lanes)))
-        lane_x, lane_y=getVisionLane(lanes)
-        # for lane in lanes:
-        #     x = lane.position.x/95
-        #     y = (-lane.position.y+160)/120
-
-        #     nx = x*math.cos(tilt) - y*math.sin(tilt)+0.6
-        #     ny = x*math.sin(tilt) + y*math.cos(tilt)-0.7
-        #     # print("     LANE NUM {} {}".format(nx, ny))
-        #     lane_x.append(nx)
-        #     lane_y.append(ny)
-
-        right_con = getRcon(now_cons, lane_x, lane_y)
-        left_con = getLcon2(now_cons, right_con)
-        
-        plt.scatter(lane_x  , lane_y  ,c='green',s=200)
+        plt.xlim([-13,13])
+        plt.ylim([-13,13])
+        plt.scatter(0,0 ,c='black',s=400)   
         size = len(now_cons)
-        # print("SIZE - "+str(size))
+        convex_size = len(now_convex)
         plt.plot([now_cons[idx].x for idx in range(size)],[now_cons[idx].y for idx in range(size)], "b*")
-        # left_con = getLcon(now_cons, left_con)
-        # ----------- NEARPOINT PRINT ----------------------
-
-        # if len(cocons) != 0:
-        #     plt.scatter([item.x for item in cocons ],[item.y for item in cocons], c='black',s=500)
-
-        # print("LEFT "+str(left_con.x)+"  / "+str(left_con.y))
-
-        left_b=False
-        right_b=False
-
-
-        if left_con.x !=0:
-            plt.scatter(left_con.x,left_con.y , c='red',s=200)
-            left_b=True
-        if right_con.x !=0:
-            plt.scatter(right_con.x  ,right_con.y  ,c='black',s=200)
-            right_b=True
-
-
+        plt.plot([now_convex[idx].x for idx in range(convex_size)],[now_convex[idx].y for idx in range(convex_size)], "r-")
 
         target=cl.Con()
+        target.x =3
+        target.y =-0.5
+        target_deg = -math.atan2( targetCon.y, targetCon.x)*180/math.pi
         
-        if left_b and right_b:
-            target.x = 0.5*(right_con.x+left_con.x)
-            target.y = 0.5*(right_con.y+left_con.y)
-            
-            dist = getDist(right_con.x, right_con.y, left_con.x, left_con.y)
-            dx = left_con.x-right_con.x
-            dy = left_con.y-right_con.y
+        plt.scatter(new1.x  ,new1.y  ,c='gray',s=200)
+        plt.scatter(new2.x  ,new2.y  ,c='gray',s=200)
+        plt.scatter(targetCon.x  ,targetCon.y  ,c='yellow',s=150)
 
-            target.x = right_con.x + 1.3*dx/dist
-            target.y = right_con.y + 1.3*dy/dist
+        plt.plot([0, targetCon.x], [0, targetCon.y], linewidth=5, linestyle='--', color="red" )
 
-        elif left_b:
-            target.x = (left_con.x)
-            target.y = 0.5*(left_con.y)
-
-        else:
-            target.x =3
-            target.y =-0.5
-        
-        target_deg = -math.atan2( target.y, target.x)*180/math.pi
-        path_deg = math.atan2(right_con.y-left_con.y, right_con.x-left_con.x)*180/math.pi
-
-        plt.scatter(target.x  ,target.y  ,c='yellow',s=200)
-
-        plt.scatter(0,0 ,c='black',s=400)
         if target_deg > 90:
             target_deg -=180
         if target_deg < -90:
             target_deg +=180
-        print("------------------- TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT "+str(Float32(target_deg)))
-        steer_pub.publish(target_deg)
-        speed_pub.publish(5)
-        # plt.scatter([odomCon[idx].x for idx in range(sizeo) ],[odomCon[idx].y for idx in range(sizeo)], c='yellow',s=50)
-        plt.pause(0.001)
-        
+
+        speed=0
+        brake=0
+        print("Cur speed {}".format(cur_speed))
+        if abs(target_deg) > 10:
+            speed = 6
+            if cur_speed > 70:
+                print("2222222222Cur speed {}".format(cur_speed))
+                print("2222222222Cur speed {}".format(cur_speed*2))
+                brake=50
+        else:
+            speed = 12
+
+        print("Cur brake {}".format(brake))
         os.system('clear')
+        if cur_speed < 70:
+            target_deg*=1.5
+        steer_pub.publish(target_deg)
+        # speed_pub.publish(5)  
+        speed_pub.publish(speed)  
+        # brake_pub.publish(brake)  
+        plt.pause(0.001)
         rate.sleep()
-
-

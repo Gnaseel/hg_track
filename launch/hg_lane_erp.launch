@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<launch>
+ <node pkg="hg_lane" type="lidar_Prefiltering" name="lidar_Prefiltering" output="screen"/>
+ <node pkg="hg_lane" type="get_lanePath" name="get_lanePath" output="screen"/>
+ <node pkg="rviz" type="rviz" name="rviz" args="-d $(find hg_lane)/rviz/hg_lane.rviz" output="screen"/>
+ <node pkg="erp42_serial" type="erp42_serial_node" name="erp42_serial_node" output="screen"/>
+
+<!-- ROI -->
+
+ <param name="minX" type="double" value="0.0"/>
+ <param name="maxX" type="double" value="17"/>
+
+ <param name="minY" type="double" value="-0.5"/>
+ <param name="maxY" type="double" value="5"/>
+
+ <param name="minZ" type="double" value="-0.9"/>
+ <param name="maxZ" type="double" value="1.5"/>
+
+
+<!-- Threshold -->
+ <param name="dist" type="double" value="0.5"/>
+ <param name="threshold_conn_dist" type="double" value="2"/>
+ <param name="left_angle" type="double" value="50"/>
+ <param name="right_angle" type="double" value="90"/>
+
+
+ <!-- Car Config -->
+
+</launch>
