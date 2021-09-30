@@ -380,7 +380,7 @@ if __name__ == '__main__':
     b_pub = rospy.Publisher("/2", Float32)
 
     print("ON")
-    rate = rospy.Rate(10)
+    rate = rospy.Rate(30)
     lock = threading.Lock() 
 
 
@@ -429,39 +429,44 @@ if __name__ == '__main__':
         speed=0
         brake=0
         
-        if abs(target_deg) > 10:
-            speed = 6
-            if cur_speed > 100:
-                brake = 70
-            elif cur_speed > 70:
-                brake=50
+        if abs(target_deg) > 15:
+            speed = 5
+            if cur_speed > 55:
+                brake = 200
 
-        elif abs(target_deg) > 5:
+        # elif abs(target_deg) > 10:
+        #     speed = 5
+        #     if cur_speed > 35:
+        #         brake = 180
+
+        elif abs(target_deg) > 9:
+            speed = 7
+            if cur_speed > 75:
+                brake = 200
+
+        elif abs(target_deg) > 3:
             speed = 9
             if cur_speed > 95:
-                brake=35
-
+                brake=200
         else:
             speed = 12
             target_deg*=0.5
 
 
+        # if abs(target_deg) > 10:
+        if cur_speed > 100:
+            target_deg*=0.7
         if cur_speed < 70 and abs(target_deg) > 10:
             target_deg*=1.5
-        steer_pub.publish(target_deg)
-        speed_pub.publish(speed)  
-
-        print("NOW {}".format(now))
-        print("PRE {}".format(pre))
 
 
         t_sub = (now-pre).to_sec()
-        print("SUB {}".format(t_sub))
         Kd = 0.035
+        # Kd = 0.05
         D_control = Kd * (target_deg - pre_target_deg) / t_sub
-
         d_target_deg = target_deg - D_control
         pre_target_deg = target_deg
+
         print("CURR -----------------------------")
         print("Cur speed {}\n".format(cur_speed))
         print("TARG -----------------------------")
@@ -472,5 +477,12 @@ if __name__ == '__main__':
         # os.system('clear')
         a_pub.publish(target_deg)
         b_pub.publish(d_target_deg)
+
+        if abs(d_target_deg) < abs(target_deg):
+            target_deg = d_target_deg
+        if cur_speed < 30 and target_deg < 10:
+            speed=15
+        steer_pub.publish(target_deg)
+        speed_pub.publish(speed)  
         plt.pause(0.001)
         rate.sleep()

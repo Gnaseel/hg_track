@@ -99,7 +99,8 @@ void cluster_callback(sensor_msgs::PointCloud2 *msg){
       double mean_dist = sqrt((mean_x-poses.poses[i].position.x)*(mean_x-poses.poses[i].position.x) + (mean_y-poses.poses[i].position.y)*(mean_y-poses.poses[i].position.y));
       double dist = sqrt((poses.poses[i].position.x)*(poses.poses[i].position.x) + (poses.poses[i].position.y)*(poses.poses[i].position.y));
 
-      if(mean_dist > 4 && dist > 5)continue;
+      if(mean_dist > 4.5 && dist > 4.5)continue;
+      if(mean_dist > 3.0 && dist > 5)continue;
       // if(dist<0.8 && poses.poses[i].position.x < -0.5 && abs(poses.poses[i].position.y) < 0.5) continue;
       pub_poses.poses.push_back(poses.poses[i]);
       
